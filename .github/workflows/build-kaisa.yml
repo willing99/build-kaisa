@@ -25,21 +25,19 @@ jobs:
           gcc --version
           gnat --version
           nasm --version
-          iasl -v || true
 
       - name: Clone Chromeintosh coreboot
         run: |
           git clone https://github.com/Chromeintosh/coreboot.git
           cd coreboot
-          git submodule update --init --recursive
+          git submodule update --init --recursive --force
           echo "=== Repo size ==="
-          du -sh ..
+          du -sh .
 
       - name: Copy Kaisa config, enable any toolchain, expand defaults
         run: |
           cd coreboot
           cp configs/cml/config.kaisa.uefi .config
-          # Allow building with system toolchain instead of coreboot's own
           echo "CONFIG_ANY_TOOLCHAIN=y" >> .config
           make olddefconfig
           echo "=== HECI related config options ==="
@@ -50,23 +48,35 @@ jobs:
       - name: Disable HECI1 at end of boot
         run: |
           cd coreboot
-          # Try multiple possible option names
           sed -i 's/^CONFIG_DISABLE_HECI1_AT_END_OF_BOOT=y/# CONFIG_DISABLE_HECI1_AT_END_OF_BOOT is not set/' .config
           sed -i 's/^CONFIG_DISABLE_HECI1_ON_BOOT=y/# CONFIG_DISABLE_HECI1_ON_BOOT is not set/' .config
           sed -i 's/^CONFIG_DISABLE_HECI1=y/# CONFIG_DISABLE_HECI1 is not set/' .config
-          # Also try scripts/config tool
           ./scripts/config --disable DISABLE_HECI1_AT_END_OF_BOOT 2>/dev/null || true
           ./scripts/config --disable DISABLE_HECI1_ON_BOOT 2>/dev/null || true
           ./scripts/config --disable DISABLE_HECI1 2>/dev/null || true
-          # Re-run olddefconfig to resolve dependencies
           make olddefconfig
           echo "=== HECI options after disable ==="
           grep -i "heci" .config || echo "(none found)"
 
-      - name: Build coreboot
+      - name: Build coreboot (with OpenSSL fix)
         run: |
           cd coreboot
-          make -j$(nproc)
+          make -j$(nproc) 2>&1 || {
+            echo "=== First build failed, attempting OpenSSL fix ==="
+            SSL_DIR=$(find payloads/ -path "*/OpensslLib/openssl" -type d 2>/dev/null | head -1)
+            if [ -n "$SSL_DIR" ]; then
+              echo "Found OpenSSL at: $SSL_DIR"
+              cd "$SSL_DIR"
+              git remote -v
+              git remote set-url origin https://github.com/openssl/openssl.git 2>/dev/null || true
+              git fetch --all --tags 2>/dev/null || true
+              git fetch --unshallow 2>/dev/null || git fetch origin 2>/dev/null || true
+              git checkout de90e54bbe82e5be4fb9608b6f5c308bb837d355 2>/dev/null || true
+              cd -
+            fi
+            echo "=== Retrying build ==="
+            make -j$(nproc)
+          }
           echo "=== Build output ==="
           ls -lh build/coreboot.rom
 
