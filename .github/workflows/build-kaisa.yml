@@ -51,7 +51,7 @@ jobs:
         run: |
           cd coreboot
           sed -i 's/0x%lx\\n/0x%zx\\n/g' src/ec/google/chromeec/ec_sync.c
-          printf '\nunsigned long long __udivmoddi4(unsigned long long num, unsigned long long den, unsigned long long *rem)\n{\n  unsigned long long q=0,b=1;\n  if(!den) return 0;\n  while((long long)den>=0){den<<=1;b<<=1;}\n  while(b){if(den<=num){num-=den;q+=b;}den>>=1;b>>=1;}\n  if(rem)*rem=num;\n  return q;\n}\n' >> src/lib/gcc.c
+          printf '\nunsigned long long __udivmoddi4(unsigned long long, unsigned long long, unsigned long long *);\nunsigned long long __udivmoddi4(unsigned long long num, unsigned long long den, unsigned long long *rem)\n{\n  unsigned long long q=0,b=1;\n  if(!den) return 0;\n  while((long long)den>=0){den<<=1;b<<=1;}\n  while(b){if(den<=num){num-=den;q+=b;}den>>=1;b>>=1;}\n  if(rem)*rem=num;\n  return q;\n}\n' >> src/lib/gcc.c
           echo "=== gcc.c tail ==="
           tail -15 src/lib/gcc.c
 
