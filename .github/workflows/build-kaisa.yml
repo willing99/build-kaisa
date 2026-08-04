@@ -29,10 +29,11 @@ jobs:
 
       - name: Clone Chromeintosh coreboot
         run: |
-          git clone --recurse-submodules --depth=1 https://github.com/Chromeintosh/coreboot.git
+          git clone https://github.com/Chromeintosh/coreboot.git
           cd coreboot
+          git submodule update --init --recursive
           echo "=== Repo size ==="
-          du -sh .
+          du -sh ..
 
       - name: Copy Kaisa config, enable any toolchain, expand defaults
         run: |
