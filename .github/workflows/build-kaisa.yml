@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    timeout-minutes: 180
 
     steps:
       - name: Free disk space
@@ -23,7 +23,8 @@ jobs:
           sudo apt-get install -y \
             bison build-essential curl flex git gnat imagemagick \
             libncurses5-dev m4 nasm python-is-python3 uuid-dev zlib1g-dev \
-            libssl-dev pkg-config libcmocka-dev libnss3-dev cpio wget acpica-tools
+            libssl-dev pkg-config libcmocka-dev libnss3-dev cpio wget \
+            acpica-tools gperf texinfo
           gcc --version
           gnat --version
           nasm --version
@@ -43,18 +44,22 @@ jobs:
           ./cbfstool mrchromebox.rom extract -n fallback/payload -f payload.elf -m x86
           ls -lh payload.elf
 
-      - name: Clone Chromeintosh coreboot (without submodules)
+      - name: Clone Chromeintosh coreboot
         run: |
           git clone --depth=1 https://github.com/Chromeintosh/coreboot.git
           cd coreboot
           echo "=== Repo size ==="
           du -sh .
 
+      - name: Build coreboot toolchain (crossgcc)
+        run: |
+          cd coreboot
+          make crossgcc-i386 CPUS=$(nproc)
+
       - name: Configure coreboot with pre-built payload
         run: |
           cd coreboot
           cp configs/cml/config.kaisa.uefi .config
-          echo "CONFIG_ANY_TOOLCHAIN=y" >> .config
           make olddefconfig
 
           # Disable EDK2 payload build
@@ -79,7 +84,6 @@ jobs:
           sed -i 's/^CONFIG_DISABLE_HECI1_AT_END_OF_BOOT=y/# CONFIG_DISABLE_HECI1_AT_END_OF_BOOT is not set/' .config
           sed -i 's/^CONFIG_DISABLE_HECI1_ON_BOOT=y/# CONFIG_DISABLE_HECI1_ON_BOOT is not set/' .config
           sed -i 's/^CONFIG_DISABLE_HECI1=y/# CONFIG_DISABLE_HECI1 is not set/' .config
-          echo "CONFIG_COMPILER_WARNING_LEVEL=0" >> .config
           make olddefconfig
           echo "=== HECI options after disable ==="
           grep -i "heci" .config || echo "(none found)"
@@ -88,7 +92,6 @@ jobs:
         run: |
           cd coreboot
           sed -i 's/0x%lx\\n/0x%zx\\n/g' src/ec/google/chromeec/ec_sync.c
-          sed -i 's/-Werror//g' Makefile
           make -j$(nproc)
           echo "=== Build output ==="
           ls -lh build/coreboot.rom
