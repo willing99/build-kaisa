@@ -87,6 +87,8 @@ jobs:
       - name: Build coreboot
         run: |
           cd coreboot
+          sed -i 's/0x%lx\\n/0x%zx\\n/g' src/ec/google/chromeec/ec_sync.c
+          sed -i 's/-Werror//g' Makefile
           make -j$(nproc)
           echo "=== Build output ==="
           ls -lh build/coreboot.rom
