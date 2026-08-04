@@ -1,4 +1,4 @@
-name: Build Chromeintosh Kaisa ROM
+Responsename: Build Chromeintosh Kaisa ROM
 
 on:
   workflow_dispatch:
@@ -13,33 +13,39 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/lib/firefox
           df -h /
-    
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             bison build-essential curl flex git gnat imagemagick \
             libncurses5-dev m4 nasm python-is-python3 uuid-dev zlib1g-dev \
-            libssl-dev pkg-config libcmocka-dev libnss3-dev cpio wget
+            libssl-dev pkg-config libcmocka-dev libnss3-dev cpio wget \
+            acpica-tools
           gcc --version
           gnat --version
           nasm --version
-    
+          iasl --version
+
       - name: Clone Chromeintosh coreboot
         run: |
           git clone --recurse-submodules --depth=1 https://github.com/Chromeintosh/coreboot.git
           cd coreboot
           echo "=== Repo size ==="
           du -sh .
-    
-      - name: Copy Kaisa config and expand defaults
+
+      - name: Copy Kaisa config, enable any toolchain, expand defaults
         run: |
           cd coreboot
           cp configs/cml/config.kaisa.uefi .config
+          # Allow building with system toolchain instead of coreboot's own
+          echo "CONFIG_ANY_TOOLCHAIN=y" >> .config
           make olddefconfig
           echo "=== HECI related config options ==="
           grep -i "heci" .config || echo "(none found)"
-    
+          echo "=== ANY_TOOLCHAIN ==="
+          grep "ANY_TOOLCHAIN" .config || echo "(not found)"
+
       - name: Disable HECI1 at end of boot
         run: |
           cd coreboot
@@ -55,14 +61,14 @@ jobs:
           make olddefconfig
           echo "=== HECI options after disable ==="
           grep -i "heci" .config || echo "(none found)"
-    
+
       - name: Build coreboot
         run: |
           cd coreboot
           make -j$(nproc)
           echo "=== Build output ==="
           ls -lh build/coreboot.rom
-    
+
       - name: Upload ROM artifact
         uses: actions/upload-artifact@v4
         with:
