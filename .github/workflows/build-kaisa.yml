@@ -40,7 +40,7 @@ jobs:
           echo "=== CBFS payload ==="
           ./cbfstool mrchromebox.rom print | grep -i "payload"
 
-          ./cbfstool mrchromebox.rom extract -n fallback/payload -f payload.elf
+          ./cbfstool mrchromebox.rom extract -n fallback/payload -f payload.elf -m x86
           ls -lh payload.elf
 
       - name: Clone Chromeintosh coreboot (without submodules)
