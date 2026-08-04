@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 180
+    timeout-minutes: 120
 
     steps:
       - name: Free disk space
@@ -24,10 +24,9 @@ jobs:
             bison build-essential curl flex git gnat imagemagick \
             libncurses5-dev m4 nasm python-is-python3 uuid-dev zlib1g-dev \
             libssl-dev pkg-config libcmocka-dev libnss3-dev cpio wget \
-            acpica-tools gperf texinfo
+            acpica-tools gcc-multilib g++-multilib
           gcc --version
           gnat --version
-          nasm --version
 
       - name: Download MrChromebox firmware and extract UEFI payload
         run: |
@@ -51,26 +50,50 @@ jobs:
           echo "=== Repo size ==="
           du -sh .
 
-      - name: Build coreboot toolchain (crossgcc)
+      - name: Patch coreboot source for system GCC compatibility
         run: |
           cd coreboot
-          make crossgcc-i386 CPUS=$(nproc)
+          # Fix format string warning in ec_sync.c
+          sed -i 's/0x%lx\\n/0x%zx\\n/g' src/ec/google/chromeec/ec_sync.c
+          # Add missing __udivmoddi4 implementation (normally in libgcc cross toolchain)
+          cat >> src/lib/gcc.c << 'ENDOFPATCH'
+
+/* Implement __udivmoddi4 for system GCC compatibility */
+unsigned long long __udivmoddi4(unsigned long long num, unsigned long long den, unsigned long long *rem)
+{
+    unsigned long long quot = 0, qbit = 1;
+    if (den == 0) return 0;
+    while ((long long)den >= 0) {
+        den <<= 1;
+        qbit <<= 1;
+    }
+    while (qbit) {
+        if (den <= num) {
+            num -= den;
+            quot += qbit;
+        }
+        den >>= 1;
+        qbit >>= 1;
+    }
+    if (rem) *rem = num;
+    return quot;
+}
+ENDOFPATCH
+          echo "=== gcc.c patched ==="
+          tail -20 src/lib/gcc.c
 
       - name: Configure coreboot with pre-built payload
         run: |
           cd coreboot
           cp configs/cml/config.kaisa.uefi .config
+          echo "CONFIG_ANY_TOOLCHAIN=y" >> .config
           make olddefconfig
 
-          # Disable EDK2 payload build
           sed -i 's/^CONFIG_PAYLOAD_EDK2=y/# CONFIG_PAYLOAD_EDK2 is not set/' .config
           sed -i 's/^CONFIG_PAYLOAD_TIANOCORE=y/# CONFIG_PAYLOAD_TIANOCORE is not set/' .config
-          # Enable ELF payload
           sed -i 's/^# CONFIG_PAYLOAD_ELF is not set/CONFIG_PAYLOAD_ELF=y/' .config
-          # Set payload file path
           sed -i 's|^CONFIG_PAYLOAD_FILE=.*|CONFIG_PAYLOAD_FILE="../payload.elf"|' .config
           grep -q '^CONFIG_PAYLOAD_FILE=' .config || echo 'CONFIG_PAYLOAD_FILE="../payload.elf"' >> .config
-          # Resolve dependencies
           make olddefconfig
 
           echo "=== Payload config ==="
@@ -91,7 +114,6 @@ jobs:
       - name: Build coreboot
         run: |
           cd coreboot
-          sed -i 's/0x%lx\\n/0x%zx\\n/g' src/ec/google/chromeec/ec_sync.c
           make -j$(nproc)
           echo "=== Build output ==="
           ls -lh build/coreboot.rom
