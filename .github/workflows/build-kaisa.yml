@@ -1,4 +1,4 @@
-Responsename: Build Chromeintosh Kaisa ROM
+name: Build Chromeintosh Kaisa ROM
 
 on:
   workflow_dispatch:
