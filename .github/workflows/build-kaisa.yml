@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 180
+    timeout-minutes: 120
 
     steps:
       - name: Free disk space
@@ -23,30 +23,57 @@ jobs:
           sudo apt-get install -y \
             bison build-essential curl flex git gnat imagemagick \
             libncurses5-dev m4 nasm python-is-python3 uuid-dev zlib1g-dev \
-            libssl-dev pkg-config libcmocka-dev libnss3-dev cpio wget \
-            acpica-tools
+            libssl-dev pkg-config libcmocka-dev libnss3-dev cpio wget
           gcc --version
           gnat --version
           nasm --version
 
-      - name: Clone Chromeintosh coreboot
+      - name: Download MrChromebox firmware and extract UEFI payload
         run: |
-          git clone https://github.com/Chromeintosh/coreboot.git
+          # Download cbfstool
+          wget -q -O cbfstool.tar.gz https://mrchromebox.tech/files/util/cbfstool.tar.gz
+          tar -zxf cbfstool.tar.gz
+          chmod +x cbfstool
+
+          # Download MrChromebox Kaisa firmware (latest 2606.1)
+          wget -q -O mrchromebox.rom "https://mrchromebox.tech/files/firmware/full_rom/MrChromebox-2606.1/coreboot_edk2-kaisa-mrchromebox_20260714.rom"
+          ls -lh mrchromebox.rom
+
+          # List cbfs to find payload
+          echo "=== CBFS contents (payload-related) ==="
+          ./cbfstool mrchromebox.rom print | grep -i "payload\|fallback" || ./cbfstool mrchromebox.rom print | head -30
+
+          # Extract the UEFI payload
+          ./cbfstool mrchromebox.rom extract -n fallback/payload -f payload.elf -m raw 2>/dev/null || \
+          ./cbfstool mrchromebox.rom extract -n fallback/payload -f payload.elf 2>/dev/null || \
+          ./cbfstool mrchromebox.rom extract -n payload -f payload.elf 2>/dev/null
+          ls -lh payload.elf
+
+      - name: Clone Chromeintosh coreboot (without submodules)
+        run: |
+          git clone --depth=1 https://github.com/Chromeintosh/coreboot.git
           cd coreboot
-          git submodule update --init --recursive --force
           echo "=== Repo size ==="
           du -sh .
 
-      - name: Copy Kaisa config, enable any toolchain, expand defaults
+      - name: Configure coreboot with pre-built payload
         run: |
           cd coreboot
           cp configs/cml/config.kaisa.uefi .config
           echo "CONFIG_ANY_TOOLCHAIN=y" >> .config
           make olddefconfig
-          echo "=== HECI related config options ==="
+
+          # Disable EDK2 payload build, use pre-built payload instead
+          ./scripts/config --disable PAYLOAD_EDK2
+          ./scripts/config --disable PAYLOAD_TIANOCORE
+          ./scripts/config --enable PAYLOAD_ELF
+          ./scripts/config --set-str PAYLOAD_FILE "../payload.elf"
+          make olddefconfig
+
+          echo "=== Payload config ==="
+          grep "PAYLOAD" .config | head -20
+          echo "=== HECI related config ==="
           grep -i "heci" .config || echo "(none found)"
-          echo "=== EDK2 config ==="
-          grep "EDK2_REPOSITORY\|EDK2_TAG\|EDK2_PLATFORMS" .config || echo "(none found)"
 
       - name: Disable HECI1 at end of boot
         run: |
@@ -60,45 +87,6 @@ jobs:
           make olddefconfig
           echo "=== HECI options after disable ==="
           grep -i "heci" .config || echo "(none found)"
-
-      - name: Pre-create EDK2 workspace (fix OpenSSL submodule)
-        run: |
-          cd coreboot
-          # Extract EDK2 repo URL and tag from config
-          EDK2_REPO=$(grep "CONFIG_EDK2_REPOSITORY=" .config | head -1 | sed 's/.*="//;s/".*//')
-          EDK2_TAG=$(grep "CONFIG_EDK2_TAG_OR_REV=" .config | head -1 | sed 's/.*="//;s/".*//')
-          EDK2_PLAT_REPO=$(grep "CONFIG_EDK2_PLATFORMS_REPOSITORY=" .config | head -1 | sed 's/.*="//;s/".*//')
-          EDK2_PLAT_TAG=$(grep "CONFIG_EDK2_PLATFORMS_TAG_OR_REV=" .config | head -1 | sed 's/.*="//;s/".*//')
-          echo "EDK2 repo: $EDK2_REPO"
-          echo "EDK2 tag: $EDK2_TAG"
-          echo "EDK2 platforms repo: $EDK2_PLAT_REPO"
-          echo "EDK2 platforms tag: $EDK2_PLAT_TAG"
-
-          # Derive workspace directory name (3rd path component from URL)
-          EDK2_NAME=$(echo "$EDK2_REPO" | sed 's|^\(https\?://\|git://\|ssh://\|git@\)[^/]*/||; s|\.git$||; s|.*/||')
-          echo "EDK2 workspace name: $EDK2_NAME"
-          WS="payloads/external/edk2/workspace"
-          mkdir -p "$WS"
-
-          # Pre-clone EDK2 with full history (no shallow)
-          cd "$WS"
-          git clone "$EDK2_REPO" "$EDK2_NAME"
-          cd "$EDK2_NAME"
-          git fetch origin
-          git checkout "$EDK2_TAG" -f || echo "WARNING: checkout $EDK2_TAG failed"
-          git submodule update --init --recursive --force
-          echo "=== OpenSSL checkout verify ==="
-          if [ -d "CryptoPkg/Library/OpensslLib/openssl" ]; then
-            cd CryptoPkg/Library/OpensslLib/openssl
-            git log --oneline -1
-            cd -
-          else
-            echo "OpenSSL directory not found!"
-          fi
-          echo "=== Disk space ==="
-          df -h /
-          echo "=== Workspace size ==="
-          du -sh .
 
       - name: Build coreboot
         run: |
