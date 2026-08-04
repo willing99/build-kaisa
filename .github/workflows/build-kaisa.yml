@@ -30,23 +30,17 @@ jobs:
 
       - name: Download MrChromebox firmware and extract UEFI payload
         run: |
-          # Download cbfstool
           wget -q -O cbfstool.tar.gz https://mrchromebox.tech/files/util/cbfstool.tar.gz
           tar -zxf cbfstool.tar.gz
           chmod +x cbfstool
 
-          # Download MrChromebox Kaisa firmware (latest 2606.1)
           wget -q -O mrchromebox.rom "https://mrchromebox.tech/files/firmware/full_rom/MrChromebox-2606.1/coreboot_edk2-kaisa-mrchromebox_20260714.rom"
           ls -lh mrchromebox.rom
 
-          # List cbfs to find payload
-          echo "=== CBFS contents (payload-related) ==="
-          ./cbfstool mrchromebox.rom print | grep -i "payload\|fallback" || ./cbfstool mrchromebox.rom print | head -30
+          echo "=== CBFS payload ==="
+          ./cbfstool mrchromebox.rom print | grep -i "payload"
 
-          # Extract the UEFI payload
-          ./cbfstool mrchromebox.rom extract -n fallback/payload -f payload.elf -m raw 2>/dev/null || \
-          ./cbfstool mrchromebox.rom extract -n fallback/payload -f payload.elf 2>/dev/null || \
-          ./cbfstool mrchromebox.rom extract -n payload -f payload.elf 2>/dev/null
+          ./cbfstool mrchromebox.rom extract -n fallback/payload -f payload.elf
           ls -lh payload.elf
 
       - name: Clone Chromeintosh coreboot (without submodules)
@@ -63,7 +57,6 @@ jobs:
           echo "CONFIG_ANY_TOOLCHAIN=y" >> .config
           make olddefconfig
 
-          # Disable EDK2 payload build, use pre-built payload instead
           ./scripts/config --disable PAYLOAD_EDK2
           ./scripts/config --disable PAYLOAD_TIANOCORE
           ./scripts/config --enable PAYLOAD_ELF
