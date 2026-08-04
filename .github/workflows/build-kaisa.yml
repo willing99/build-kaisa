@@ -25,7 +25,7 @@ jobs:
           gcc --version
           gnat --version
           nasm --version
-          iasl --version
+          iasl -v || true
 
       - name: Clone Chromeintosh coreboot
         run: |
