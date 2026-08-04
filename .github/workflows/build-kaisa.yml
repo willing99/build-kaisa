@@ -79,6 +79,7 @@ jobs:
           sed -i 's/^CONFIG_DISABLE_HECI1_AT_END_OF_BOOT=y/# CONFIG_DISABLE_HECI1_AT_END_OF_BOOT is not set/' .config
           sed -i 's/^CONFIG_DISABLE_HECI1_ON_BOOT=y/# CONFIG_DISABLE_HECI1_ON_BOOT is not set/' .config
           sed -i 's/^CONFIG_DISABLE_HECI1=y/# CONFIG_DISABLE_HECI1 is not set/' .config
+          echo "CONFIG_COMPILER_WARNING_LEVEL=0" >> .config
           make olddefconfig
           echo "=== HECI options after disable ==="
           grep -i "heci" .config || echo "(none found)"
