@@ -57,10 +57,15 @@ jobs:
           echo "CONFIG_ANY_TOOLCHAIN=y" >> .config
           make olddefconfig
 
-          ./scripts/config --disable PAYLOAD_EDK2
-          ./scripts/config --disable PAYLOAD_TIANOCORE
-          ./scripts/config --enable PAYLOAD_ELF
-          ./scripts/config --set-str PAYLOAD_FILE "../payload.elf"
+          # Disable EDK2 payload build
+          sed -i 's/^CONFIG_PAYLOAD_EDK2=y/# CONFIG_PAYLOAD_EDK2 is not set/' .config
+          sed -i 's/^CONFIG_PAYLOAD_TIANOCORE=y/# CONFIG_PAYLOAD_TIANOCORE is not set/' .config
+          # Enable ELF payload
+          sed -i 's/^# CONFIG_PAYLOAD_ELF is not set/CONFIG_PAYLOAD_ELF=y/' .config
+          # Set payload file path
+          sed -i 's|^CONFIG_PAYLOAD_FILE=.*|CONFIG_PAYLOAD_FILE="../payload.elf"|' .config
+          grep -q '^CONFIG_PAYLOAD_FILE=' .config || echo 'CONFIG_PAYLOAD_FILE="../payload.elf"' >> .config
+          # Resolve dependencies
           make olddefconfig
 
           echo "=== Payload config ==="
@@ -74,9 +79,6 @@ jobs:
           sed -i 's/^CONFIG_DISABLE_HECI1_AT_END_OF_BOOT=y/# CONFIG_DISABLE_HECI1_AT_END_OF_BOOT is not set/' .config
           sed -i 's/^CONFIG_DISABLE_HECI1_ON_BOOT=y/# CONFIG_DISABLE_HECI1_ON_BOOT is not set/' .config
           sed -i 's/^CONFIG_DISABLE_HECI1=y/# CONFIG_DISABLE_HECI1 is not set/' .config
-          ./scripts/config --disable DISABLE_HECI1_AT_END_OF_BOOT 2>/dev/null || true
-          ./scripts/config --disable DISABLE_HECI1_ON_BOOT 2>/dev/null || true
-          ./scripts/config --disable DISABLE_HECI1 2>/dev/null || true
           make olddefconfig
           echo "=== HECI options after disable ==="
           grep -i "heci" .config || echo "(none found)"
