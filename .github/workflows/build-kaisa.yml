@@ -12,6 +12,9 @@ jobs:
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/lib/firefox
+          sudo rm -rf /opt/google /opt/microsoft /opt/pipx /usr/local/share
+          sudo apt-get clean
+          sudo apt-get autoremove -y --purge
           df -h /
 
       - name: Install build dependencies
@@ -42,8 +45,8 @@ jobs:
           make olddefconfig
           echo "=== HECI related config options ==="
           grep -i "heci" .config || echo "(none found)"
-          echo "=== ANY_TOOLCHAIN ==="
-          grep "ANY_TOOLCHAIN" .config || echo "(not found)"
+          echo "=== EDK2 config ==="
+          grep "EDK2_REPOSITORY\|EDK2_TAG\|EDK2_PLATFORMS" .config || echo "(none found)"
 
       - name: Disable HECI1 at end of boot
         run: |
@@ -58,25 +61,49 @@ jobs:
           echo "=== HECI options after disable ==="
           grep -i "heci" .config || echo "(none found)"
 
-      - name: Build coreboot (with OpenSSL fix)
+      - name: Pre-create EDK2 workspace (fix OpenSSL submodule)
         run: |
           cd coreboot
-          make -j$(nproc) 2>&1 || {
-            echo "=== First build failed, attempting OpenSSL fix ==="
-            SSL_DIR=$(find payloads/ -path "*/OpensslLib/openssl" -type d 2>/dev/null | head -1)
-            if [ -n "$SSL_DIR" ]; then
-              echo "Found OpenSSL at: $SSL_DIR"
-              cd "$SSL_DIR"
-              git remote -v
-              git remote set-url origin https://github.com/openssl/openssl.git 2>/dev/null || true
-              git fetch --all --tags 2>/dev/null || true
-              git fetch --unshallow 2>/dev/null || git fetch origin 2>/dev/null || true
-              git checkout de90e54bbe82e5be4fb9608b6f5c308bb837d355 2>/dev/null || true
-              cd -
-            fi
-            echo "=== Retrying build ==="
-            make -j$(nproc)
-          }
+          # Extract EDK2 repo URL and tag from config
+          EDK2_REPO=$(grep "CONFIG_EDK2_REPOSITORY=" .config | head -1 | sed 's/.*="//;s/".*//')
+          EDK2_TAG=$(grep "CONFIG_EDK2_TAG_OR_REV=" .config | head -1 | sed 's/.*="//;s/".*//')
+          EDK2_PLAT_REPO=$(grep "CONFIG_EDK2_PLATFORMS_REPOSITORY=" .config | head -1 | sed 's/.*="//;s/".*//')
+          EDK2_PLAT_TAG=$(grep "CONFIG_EDK2_PLATFORMS_TAG_OR_REV=" .config | head -1 | sed 's/.*="//;s/".*//')
+          echo "EDK2 repo: $EDK2_REPO"
+          echo "EDK2 tag: $EDK2_TAG"
+          echo "EDK2 platforms repo: $EDK2_PLAT_REPO"
+          echo "EDK2 platforms tag: $EDK2_PLAT_TAG"
+
+          # Derive workspace directory name (3rd path component from URL)
+          EDK2_NAME=$(echo "$EDK2_REPO" | sed 's|^\(https\?://\|git://\|ssh://\|git@\)[^/]*/||; s|\.git$||; s|.*/||')
+          echo "EDK2 workspace name: $EDK2_NAME"
+          WS="payloads/external/edk2/workspace"
+          mkdir -p "$WS"
+
+          # Pre-clone EDK2 with full history (no shallow)
+          cd "$WS"
+          git clone "$EDK2_REPO" "$EDK2_NAME"
+          cd "$EDK2_NAME"
+          git fetch origin
+          git checkout "$EDK2_TAG" -f || echo "WARNING: checkout $EDK2_TAG failed"
+          git submodule update --init --recursive --force
+          echo "=== OpenSSL checkout verify ==="
+          if [ -d "CryptoPkg/Library/OpensslLib/openssl" ]; then
+            cd CryptoPkg/Library/OpensslLib/openssl
+            git log --oneline -1
+            cd -
+          else
+            echo "OpenSSL directory not found!"
+          fi
+          echo "=== Disk space ==="
+          df -h /
+          echo "=== Workspace size ==="
+          du -sh .
+
+      - name: Build coreboot
+        run: |
+          cd coreboot
+          make -j$(nproc)
           echo "=== Build output ==="
           ls -lh build/coreboot.rom
 
